@@ -1,0 +1,6 @@
+*.png
+*.pdf
+*.jpg
+.ipynb_checkpoints
+*.pyc
+elvis_data
