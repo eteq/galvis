@@ -2,8 +2,13 @@ import os
 import re
 from glob import glob
 
+import numpy as np
+
 from astropy import units as u
 from astropy.table import Table, QTable
+from astropy.io import fits
+from astropy.wcs import WCS
+from astropy.coordinates import SkyCoord
 
 ### ELVIS simulation loaders
 
@@ -40,5 +45,50 @@ def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False):
 
 
 ### GALFA-related loaders
-def load_galfa_sensitivity(fn):
-    raise NotImplementedError
+def load_galfa_sensitivity(fn, rngscs=None, cendist=None):
+    """
+    `rngscs` is a length-two SkyCoords with the upper/lower bounds of a
+    square cutoff
+
+    `cendist` is a 2-tuple of (centerSkyCoord, angle) to cut out *only* the
+
+    returns data, skycoords, wcs, hdu
+    """
+    f = fits.open(fn)
+    hdu = f[0]
+
+    wcs = WCS(hdu.header)
+
+    # create the SkyCoord
+    xp, yp = np.mgrid[:hdu.data.shape[1], :hdu.data.shape[0]]
+    scs = SkyCoord.from_pixel(xp, yp, wcs)
+    data = hdu.data.T
+
+    if rngscs is not None:
+        ra_arr = scs[:, 0].ra.value
+        ra_arr[np.isnan(ra_arr)] = 1000
+        dec_arr = scs[1000].dec.value  # 0 index is nans
+
+        minra_idx = np.argmin(np.abs(ra_arr - np.min(rngscs.ra).deg))
+        maxra_idx = np.argmin(np.abs(ra_arr - np.max(rngscs.ra).deg))
+        ra_idxmin, ra_idxmax = min(minra_idx, maxra_idx), max(minra_idx, maxra_idx)
+        mindec_idx = np.argmin(np.abs(dec_arr - np.min(rngscs.dec).deg))
+        maxdec_idx = np.argmin(np.abs(dec_arr - np.max(rngscs.dec).deg))
+        dec_idxmin, dec_idxmax = min(mindec_idx, maxdec_idx), max(mindec_idx, maxdec_idx)
+
+        slc = (slice(ra_idxmin, ra_idxmax), slice(dec_idxmin, dec_idxmax))
+
+        data = data[slc]
+        scs = scs[slc]
+
+    if cendist is not None:
+        censc, dist = cendist
+        seps = censc.separation(scs)
+        sepmsk = seps <= dist
+
+        data = data[sepmsk]
+        scs = scs[sepmsk]
+
+    qdata = data * u.Unit(hdu.header['BUNIT'].replace('seconds', 'second'))
+
+    return qdata, scs, wcs, hdu
