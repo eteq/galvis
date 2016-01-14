@@ -8,7 +8,8 @@ from astropy import units as u
 from astropy.table import Table, QTable
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord
+from astropy.coordinates import SkyCoord, SphericalRepresentation, CartesianRepresentation, UnitSphericalRepresentation
+from astropy.coordinates.angles import rotation_matrix
 
 ### ELVIS simulation loaders
 
@@ -27,7 +28,7 @@ def read_elvis_z0(fn):
 
     return tab
 
-def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False):
+def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False, inclhires=False):
     tables = {}
 
     fntoload = glob(os.path.join(data_dir, '*.txt'))
@@ -39,9 +40,56 @@ def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False):
         else:
             if isolated:
                 continue
+        if not inclhires and 'HiRes' in fn:
+            continue
         print('Loading', fn)
         tables[simname] = read_elvis_z0(fn)
     return tables
+
+def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
+                        target_coord=SkyCoord(0*u.deg, 0*u.deg),
+                        earth_location=[0,0,0]*u.kpc, roll_angle=0*u.deg):
+    """
+    Computes a spherical coordinate system centered on the `hostidx` halo,
+    re-oriented so that `targetidx` is at the `target_coord` coordinate
+    location.
+
+    Note that this adds columns 'host<n>_lat', 'host<n>_lon', and 'host<n>_dist' to
+    `elvis_tab`, and will *overwrite* them if  they already exist.
+    """
+    if hasattr(target_coord, 'spherical'):
+        target_lat = target_coord.spherical.lat
+        target_lon = target_coord.spherical.lon
+    else:
+        target_lat = target_coord.lat
+        target_lon = target_coord.lon
+
+    dx = u.Quantity((elvis_tab['X'])-elvis_tab['X'][hostidx]) + earth_location[0]
+    dy = u.Quantity((elvis_tab['Y'])-elvis_tab['Y'][hostidx]) + earth_location[1]
+    dz = u.Quantity((elvis_tab['Z'])-elvis_tab['Z'][hostidx]) + earth_location[2]
+
+    cart = CartesianRepresentation(dx, dy, dz)
+    sph = cart.represent_as(SphericalRepresentation)
+
+    #first rotate the host to 0,0
+    M1 = rotation_matrix(sph[targetidx].lon, 'z')
+    M2 = rotation_matrix(-sph[targetidx].lat, 'y')
+    #now rotate from origin to target lat,lon
+    M3 = rotation_matrix(target_lat, 'y')
+    M4 = rotation_matrix(-target_lon, 'z')
+    #now compute any "roll" about the final axis
+    targ_cart = UnitSphericalRepresentation(lat=target_lat, lon=target_lon).represent_as(CartesianRepresentation)
+    M5 = rotation_matrix(roll_angle, targ_cart.xyz.value)
+
+    M = (M5*M4*M3*M2*M1).A
+    newxyz = np.dot(M, cart.xyz)
+
+    cart2 = CartesianRepresentation(newxyz)
+    sph2 = cart2.represent_as(SphericalRepresentation)
+
+    elvis_tab['host{}_lat'.format(hostidx)] = sph2.lat.to(u.deg)
+    elvis_tab['host{}_lon'.format(hostidx)] = sph2.lon.to(u.deg)
+    elvis_tab['host{}_dist'.format(hostidx)] = sph2.distance
 
 
 ### GALFA-related loaders
