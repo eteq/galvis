@@ -48,7 +48,8 @@ def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False, inclhire
 
 def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
                         target_coord=SkyCoord(0*u.deg, 0*u.deg),
-                        earth_location=[0,0,0]*u.kpc, roll_angle=0*u.deg):
+                        earth_distance=8.5*u.kpc, earth_vrot=220*u.km/u.s,
+                        roll_angle=0*u.deg):
     """
     Computes a spherical coordinate system centered on the `hostidx` halo,
     re-oriented so that `targetidx` is at the `target_coord` coordinate
@@ -63,6 +64,10 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     else:
         target_lat = target_coord.lat
         target_lon = target_coord.lon
+
+    #compute earth_location from galactic center and earth_distance
+    antigal = SkyCoord(180*u.deg, 0*u.deg, frame='galactic').icrs
+    earth_location = antigal.cartesian.xyz * earth_distance
 
     dx = u.Quantity((elvis_tab['X'])-elvis_tab['X'][hostidx]) + earth_location[0]
     dy = u.Quantity((elvis_tab['Y'])-elvis_tab['Y'][hostidx]) + earth_location[1]
@@ -90,6 +95,26 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     elvis_tab['host{}_lat'.format(hostidx)] = sph2.lat.to(u.deg)
     elvis_tab['host{}_lon'.format(hostidx)] = sph2.lon.to(u.deg)
     elvis_tab['host{}_dist'.format(hostidx)] = sph2.distance
+
+    # now compute  velocities
+    # host galactocentric
+    dvxg = u.Quantity((elvis_tab['Vx'])-elvis_tab['Vx'][hostidx])
+    dvyg = u.Quantity((elvis_tab['Vy'])-elvis_tab['Vy'][hostidx])
+    dvzg = u.Quantity((elvis_tab['Vz'])-elvis_tab['Vz'][hostidx])
+    dxg = dx - earth_location[0]
+    dyg = dy - earth_location[1]
+    dzg = dz - earth_location[2]
+    vrg = (dvxg*dxg + dvyg*dyg + dvzg*dzg) * (dxg**2+dyg**2+dzg**2)**-0.5
+    elvis_tab['host{}_galvr'.format(hostidx)] = vrg.to(u.km/u.s)
+
+    # "vLSR-like"
+    earth_rotdir = SkyCoord(90*u.deg, 0*u.deg, frame='galactic').icrs
+    vxyz = earth_rotdir.cartesian.xyz * earth_vrot
+    dvx = dvxg + vxyz[0]
+    dvy = dvyg + vxyz[1]
+    dvz = dvzg + vxyz[2]
+    vrlsr = (dvx*dx + dvy*dy + dvz*dz) * (dx**2+dy**2+dz**2)**-0.5
+    elvis_tab['host{}_vrlsr'.format(hostidx)] = vrlsr.to(u.km/u.s)
 
 
 ### GALFA-related loaders
@@ -137,6 +162,8 @@ def load_galfa_sensitivity(fn, rngscs=None, cendist=None):
         data = data[sepmsk]
         scs = scs[sepmsk]
 
-    qdata = data * u.Unit(hdu.header['BUNIT'].replace('seconds', 'second'))
+    #qdata = data * u.Unit(hdu.header['BUNIT'].replace('seconds', 'second'))
+    # the unit in the header is wrong - should be solar masses @ 1 Mpc
+    qdata = data * u.Msun * u.Mpc**-2
 
     return qdata, scs, wcs, hdu
