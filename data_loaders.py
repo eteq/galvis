@@ -46,6 +46,9 @@ def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False, inclhire
         tables[simname] = read_elvis_z0(fn)
     return tables
 
+
+galactic_center = SkyCoord(0*u.deg, 0*u.deg, frame='galactic')
+
 def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
                         target_coord=SkyCoord(0*u.deg, 0*u.deg),
                         earth_distance=8.5*u.kpc, earth_vrot=220*u.km/u.s,
@@ -55,7 +58,7 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     re-oriented so that `targetidx` is at the `target_coord` coordinate
     location.
 
-    Note that this adds columns 'host<n>_lat', 'host<n>_lon', and 'host<n>_dist' to
+    Note that this adds columns 'host<n>_*' to
     `elvis_tab`, and will *overwrite* them if  they already exist.
     """
     if hasattr(target_coord, 'spherical'):
@@ -65,36 +68,57 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
         target_lat = target_coord.lat
         target_lon = target_coord.lon
 
-    #compute earth_location from galactic center and earth_distance
-    antigal = SkyCoord(180*u.deg, 0*u.deg, frame='galactic').icrs
-    earth_location = antigal.cartesian.xyz * earth_distance
 
-    dx = u.Quantity((elvis_tab['X'])-elvis_tab['X'][hostidx]) + earth_location[0]
-    dy = u.Quantity((elvis_tab['Y'])-elvis_tab['Y'][hostidx]) + earth_location[1]
-    dz = u.Quantity((elvis_tab['Z'])-elvis_tab['Z'][hostidx]) + earth_location[2]
+    def offset_repr(rep, vector, newrep=None):
+        if newrep is None:
+            newrep = rep.__class__
+        newxyz = rep.to_cartesian().xyz + vector.reshape(3, 1)
+        return CartesianRepresentation(newxyz).represent_as(newrep)
 
-    cart = CartesianRepresentation(dx, dy, dz)
-    sph = cart.represent_as(SphericalRepresentation)
+    def rotate_repr(repr, matrix, newrep=None):
+        if newrep is None:
+            newrep = rep.__class__
+        newxyz = np.dot(matrix.view(np.ndarray), rep.to_cartesian().xyz)
+        return CartesianRepresentation(newxyz).represent_as(newrep)
 
-    #first rotate the host to 0,0
+    rep = CartesianRepresentation(elvis_tab['X'], elvis_tab['Y'], elvis_tab['Z'])
+    # first we offset the catalog to have its origin at host0
+    rep = offset_repr(rep, -rep.xyz[:, hostidx])
+
+    #now rotate so that host1 is along the z-axis, and apply the arbitrary roll angle
+    usph = rep.represent_as(UnitSphericalRepresentation)
+    M1 = rotation_matrix(usph.lon[targetidx], 'z')
+    M2 = rotation_matrix(90*u.deg-usph.lat[targetidx], 'y')
+    M3 = rotation_matrix(roll_angle, 'z')
+    rep = rotate_repr(rep, M3*M2*M1)
+
+    #now determine the location of the earth in this system
+    target_gc_angle = target_coord.separation(galactic_center)
+    target_distance = rep.z[targetidx]  # distance to the target host
+    # law of sines formula applied to SSA triangle
+    sphi = np.sin(target_gc_angle + np.arcsin(earth_distance*np.sin(target_gc_angle)/target_distance))
+    earth_location = u.Quantity([earth_distance * sphi,
+                                 0*u.kpc,
+                                 earth_distance * (1-sphi**2)**0.5 ]) # cos(arcsin(sphi))
+
+    #now offset to put earth at the origin
+    rep = offset_repr(rep, earth_location)
+    sph = rep.represent_as(SphericalRepresentation)
+
+
+    # rotate to put the target at its correct spot
+    #first sent the target host to 0,0
     M1 = rotation_matrix(sph[targetidx].lon, 'z')
     M2 = rotation_matrix(-sph[targetidx].lat, 'y')
-    #now rotate from origin to target lat,lon
+    # now rotate from origin to target lat,lon
     M3 = rotation_matrix(target_lat, 'y')
     M4 = rotation_matrix(-target_lon, 'z')
-    #now compute any "roll" about the final axis
-    targ_cart = UnitSphericalRepresentation(lat=target_lat, lon=target_lon).represent_as(CartesianRepresentation)
-    M5 = rotation_matrix(roll_angle, targ_cart.xyz.value)
+    sph = rotate_repr(rep, M4*M3*M2*M1, SphericalRepresentation)
 
-    M = (M5*M4*M3*M2*M1).A
-    newxyz = np.dot(M, cart.xyz)
-
-    cart2 = CartesianRepresentation(newxyz)
-    sph2 = cart2.represent_as(SphericalRepresentation)
-
-    elvis_tab['host{}_lat'.format(hostidx)] = sph2.lat.to(u.deg)
-    elvis_tab['host{}_lon'.format(hostidx)] = sph2.lon.to(u.deg)
-    elvis_tab['host{}_dist'.format(hostidx)] = sph2.distance
+    elvis_tab['host{}_lat'.format(hostidx)] = sph.lat.to(u.deg)
+    elvis_tab['host{}_lon'.format(hostidx)] = sph.lon.to(u.deg)
+    elvis_tab['host{}_dist'.format(hostidx)] = sph.distance
+    return
 
     # now compute  velocities
     # host galactocentric
@@ -113,9 +137,9 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     dvx = dvxg + vxyz[0]
     dvy = dvyg + vxyz[1]
     dvz = dvzg + vxyz[2]
-    vrlsr = (dvx*dx + dvy*dy + dvz*dz) * (dx**2+dy**2+dz**2)**-0.5
-    elvis_tab['host{}_vrlsr'.format(hostidx)] = vrlsr.to(u.km/u.s)
 
+    vrlsr = (dvx*cart2.x + dvy*cart2.y + dvz*cart2.z) * (cart2.x**2+cart2.y**2+cart2.z**2)**-0.5
+    elvis_tab['host{}_vrlsr'.format(hostidx)] = vrlsr.to(u.km/u.s)
 
 ### GALFA-related loaders
 def load_galfa_sensitivity(fn, rngscs=None, cendist=None):
