@@ -5,7 +5,7 @@ from glob import glob
 import numpy as np
 
 from astropy import units as u
-from astropy.table import Table, QTable
+from astropy.table import QTable
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord, SphericalRepresentation, CartesianRepresentation, UnitSphericalRepresentation
@@ -13,8 +13,9 @@ from astropy.coordinates.angles import rotation_matrix
 
 ### ELVIS simulation loaders
 
+
 def read_elvis_z0(fn):
-    tab = QTable.read(fn, format='ascii.commented_header',data_start=0, header_start=1)
+    tab = QTable.read(fn, format='ascii.commented_header', data_start=0, header_start=1)
 
     col_name_re = re.compile(r'(.*?)(\(.*\))?$')
     for col in tab.columns.values():
@@ -24,9 +25,10 @@ def read_elvis_z0(fn):
             if nm != col.name:
                 col.name = nm
             if unit is not None:
-               col.unit = u.Unit(unit[1:-1]) # 1:-1 to get rid of the parenthesis
+                col.unit = u.Unit(unit[1:-1])  # 1:-1 to get rid of the parenthesis
 
     return tab
+
 
 def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False, inclhires=False):
     tables = {}
@@ -68,7 +70,6 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
         target_lat = target_coord.lat
         target_lon = target_coord.lon
 
-
     def offset_repr(rep, vector, newrep=None):
         if newrep is None:
             newrep = rep.__class__
@@ -85,29 +86,28 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     # first we offset the catalog to have its origin at host0
     rep = offset_repr(rep, -rep.xyz[:, hostidx])
 
-    #now rotate so that host1 is along the z-axis, and apply the arbitrary roll angle
+    # now rotate so that host1 is along the z-axis, and apply the arbitrary roll angle
     usph = rep.represent_as(UnitSphericalRepresentation)
     M1 = rotation_matrix(usph.lon[targetidx], 'z')
     M2 = rotation_matrix(90*u.deg-usph.lat[targetidx], 'y')
     M3 = rotation_matrix(roll_angle, 'z')
     rep = rotate_repr(rep, M3*M2*M1)
 
-    #now determine the location of the earth in this system
+    # now determine the location of the earth in this system
     target_gc_angle = target_coord.separation(galactic_center)
     target_distance = rep.z[targetidx]  # distance to the target host
     # law of sines formula applied to SSA triangle
     sphi = np.sin(target_gc_angle + np.arcsin(earth_distance*np.sin(target_gc_angle)/target_distance))
     earth_location = u.Quantity([earth_distance * sphi,
                                  0*u.kpc,
-                                 earth_distance * (1-sphi**2)**0.5 ]) # cos(arcsin(sphi))
+                                 earth_distance * (1-sphi**2)**0.5])  # cos(arcsin(sphi))
 
-    #now offset to put earth at the origin
+    # now offset to put earth at the origin
     rep = offset_repr(rep, earth_location)
     sph = rep.represent_as(SphericalRepresentation)
 
-
     # rotate to put the target at its correct spot
-    #first sent the target host to 0,0
+    # first sent the target host to 0,0
     M1 = rotation_matrix(sph[targetidx].lon, 'z')
     M2 = rotation_matrix(-sph[targetidx].lat, 'y')
     # now rotate from origin to target lat,lon
