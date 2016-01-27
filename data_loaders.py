@@ -113,8 +113,10 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     # now rotate from origin to target lat,lon
     M3 = rotation_matrix(target_lat, 'y')
     M4 = rotation_matrix(-target_lon, 'z')
-    sph = rotate_repr(rep, M4*M3*M2*M1, SphericalRepresentation)
 
+    rep = rotate_repr(rep, M4*M3*M2*M1)
+
+    sph = rep.represent_as(SphericalRepresentation)
     elvis_tab['host{}_lat'.format(hostidx)] = sph.lat.to(u.deg)
     elvis_tab['host{}_lon'.format(hostidx)] = sph.lon.to(u.deg)
     elvis_tab['host{}_dist'.format(hostidx)] = sph.distance
