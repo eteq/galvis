@@ -157,7 +157,7 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
 
     #now apply the component from that everywhere
     offset_angle = earth_rotdir.separation(ICRS(sph))
-    vrlsr = vrg + earth_vrot*np.cos(offset_angle)
+    vrlsr = vrg - earth_vrot*np.cos(offset_angle)
 
     elvis_tab['host{}_vrlsr'.format(hostidx)] = vrlsr.to(u.km/u.s)
 
