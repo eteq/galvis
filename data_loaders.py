@@ -84,7 +84,7 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
         return CartesianRepresentation(newxyz).represent_as(newrep)
 
     rep = CartesianRepresentation(elvis_tab['X'], elvis_tab['Y'], elvis_tab['Z'])
-    # first we offset the catalog to have its origin at host0
+    # first we offset the catalog to have its origin at host
     rep = offset_repr(rep, -rep.xyz[:, hostidx])
 
     # now rotate so that host1 is along the z-axis, and apply the arbitrary roll angle
@@ -92,7 +92,8 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     M1 = rotation_matrix(usph.lon[targetidx], 'z')
     M2 = rotation_matrix(90*u.deg-usph.lat[targetidx], 'y')
     M3 = rotation_matrix(roll_angle, 'z')
-    rep = rotate_repr(rep, M3*M2*M1)
+    Mfirst = M3*M2*M1
+    rep = rotate_repr(rep, Mfirst)
 
     # now determine the location of the earth in this system
     # need diagram to explain this, but it uses SSA formula
@@ -121,8 +122,8 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     # now rotate from origin to target lat,lon
     M3 = rotation_matrix(target_lat, 'y')
     M4 = rotation_matrix(-target_lon, 'z')
-
-    rep = rotate_repr(rep, M4*M3*M2*M1)
+    Mmiddle = M4*M3*M2*M1
+    rep = rotate_repr(rep, Mmiddle)
 
     # now one more rotation about the target to stick the GC in the right place
     def tomin(ang, inrep=rep[hostidx], axis=rep[targetidx].xyz, target=galactic_center.icrs):
@@ -136,27 +137,28 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     elvis_tab['host{}_lat'.format(hostidx)] = sph.lat.to(u.deg)
     elvis_tab['host{}_lon'.format(hostidx)] = sph.lon.to(u.deg)
     elvis_tab['host{}_dist'.format(hostidx)] = sph.distance
-    return
 
     # now compute  velocities
     # host galactocentric
     dvxg = u.Quantity((elvis_tab['Vx'])-elvis_tab['Vx'][hostidx])
     dvyg = u.Quantity((elvis_tab['Vy'])-elvis_tab['Vy'][hostidx])
     dvzg = u.Quantity((elvis_tab['Vz'])-elvis_tab['Vz'][hostidx])
-    dxg = dx - earth_location[0]
-    dyg = dy - earth_location[1]
-    dzg = dz - earth_location[2]
+
+    earth_location_in_xyz = np.dot(Mfirst.T, earth_location)
+    dxg = elvis_tab['X'] - elvis_tab['X'][0] - earth_location_in_xyz[0]
+    dyg = elvis_tab['Y'] - elvis_tab['Y'][0] - earth_location_in_xyz[0]
+    dzg = elvis_tab['Z'] - elvis_tab['Z'][0] - earth_location_in_xyz[0]
     vrg = (dvxg*dxg + dvyg*dyg + dvzg*dzg) * (dxg**2+dyg**2+dzg**2)**-0.5
     elvis_tab['host{}_galvr'.format(hostidx)] = vrg.to(u.km/u.s)
 
     # "vLSR-like"
+    # first figure out the rotation direction
     earth_rotdir = SkyCoord(90*u.deg, 0*u.deg, frame='galactic').icrs
-    vxyz = earth_rotdir.cartesian.xyz * earth_vrot
-    dvx = dvxg + vxyz[0]
-    dvy = dvyg + vxyz[1]
-    dvz = dvzg + vxyz[2]
 
-    vrlsr = (dvx*cart2.x + dvy*cart2.y + dvz*cart2.z) * (cart2.x**2+cart2.y**2+cart2.z**2)**-0.5
+    #now apply the component from that everywhere
+    offset_angle = earth_rotdir.separation(ICRS(sph))
+    vrlsr = vrg + earth_vrot*np.cos(offset_angle)
+
     elvis_tab['host{}_vrlsr'.format(hostidx)] = vrlsr.to(u.km/u.s)
 
 ### GALFA-related loaders
