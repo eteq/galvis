@@ -3,12 +3,13 @@ import re
 from glob import glob
 
 import numpy as np
+from scipy import optimize
 
 from astropy import units as u
 from astropy.table import QTable
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, SphericalRepresentation, CartesianRepresentation, UnitSphericalRepresentation
+from astropy.coordinates import SkyCoord, SphericalRepresentation, CartesianRepresentation, UnitSphericalRepresentation, ICRS, Angle
 from astropy.coordinates.angles import rotation_matrix
 
 ### ELVIS simulation loaders
@@ -76,7 +77,7 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
         newxyz = rep.to_cartesian().xyz + vector.reshape(3, 1)
         return CartesianRepresentation(newxyz).represent_as(newrep)
 
-    def rotate_repr(repr, matrix, newrep=None):
+    def rotate_repr(rep, matrix, newrep=None):
         if newrep is None:
             newrep = rep.__class__
         newxyz = np.dot(matrix.view(np.ndarray), rep.to_cartesian().xyz)
@@ -94,16 +95,23 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     rep = rotate_repr(rep, M3*M2*M1)
 
     # now determine the location of the earth in this system
-    target_gc_angle = target_coord.separation(galactic_center)
-    target_distance = rep.z[targetidx]  # distance to the target host
-    # law of sines formula applied to SSA triangle
-    sphi = np.sin(target_gc_angle + np.arcsin(earth_distance*np.sin(target_gc_angle)/target_distance))
-    earth_location = u.Quantity([earth_distance * sphi,
-                                 0*u.kpc,
-                                 earth_distance * (1-sphi**2)**0.5])  # cos(arcsin(sphi))
+    # need diagram to explain this, but it uses SSA formula
+    theta = target_coord.separation(galactic_center)  # target to GC angle
+    D = rep.z[targetidx]  # distance to the target host
+    R = earth_distance
+    # srho = (R/D) * np.sin(theta)
+    # sdelta_p = (srho * np.cos(theta) + (1 - srho**2)**0.5)
+    # sdelta_m = (srho * np.cos(theta) - (1 - srho**2)**0.5)
+    d1, d2 = R * np.cos(theta), (D**2 - (R * np.sin(theta))**2)**0.5
+    dp, dm = d1 + d2, d1 - d2
+    sdelta = (dp/D) * np.sin(theta)
+
+    x = R * sdelta
+    z = R * (1-sdelta**2)**0.5
+    earth_location = u.Quantity([x, 0*u.kpc, z])
 
     # now offset to put earth at the origin
-    rep = offset_repr(rep, earth_location)
+    rep = offset_repr(rep, -earth_location)
     sph = rep.represent_as(SphericalRepresentation)
 
     # rotate to put the target at its correct spot
@@ -115,6 +123,14 @@ def add_oriented_radecs(elvis_tab, hostidx=0, targetidx=1,
     M4 = rotation_matrix(-target_lon, 'z')
 
     rep = rotate_repr(rep, M4*M3*M2*M1)
+
+    # now one more rotation about the target to stick the GC in the right place
+    def tomin(ang, inrep=rep[hostidx], axis=rep[targetidx].xyz, target=galactic_center.icrs):
+        newr = rotate_repr(inrep, rotation_matrix(ang[0]*u.deg, axis))
+        return ICRS(newr).separation(target).radian
+    rot_angle = optimize.minimize(tomin, np.array(0).ravel(), method='Nelder-Mead')['x'][0]
+    Mlast = rotation_matrix(rot_angle*u.deg, rep[targetidx].xyz)
+    rep = rotate_repr(rep, Mlast)
 
     sph = rep.represent_as(SphericalRepresentation)
     elvis_tab['host{}_lat'.format(hostidx)] = sph.lat.to(u.deg)
