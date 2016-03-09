@@ -9,7 +9,10 @@ from astropy import units as u
 from astropy.table import QTable, Table
 from astropy.io import fits
 from astropy.wcs import WCS
-from astropy.coordinates import SkyCoord, SphericalRepresentation, CartesianRepresentation, UnitSphericalRepresentation, ICRS, Angle
+from astropy.coordinates import (SkyCoord, ICRS, SphericalRepresentation,
+                                 CartesianRepresentation,
+                                 UnitSphericalRepresentation, Distance, Angle)
+
 from astropy.coordinates.angles import rotation_matrix
 
 ### ELVIS simulation loaders
@@ -251,7 +254,9 @@ def load_mccon12_table(mcconn_url='https://www.astrosci.ca/users/alan/Nearby_Dwa
 
     scs = []
     for row in str_tab:
-        scs.append(SkyCoord(row['RA'], row['Dec'], unit=(u.hour, u.deg)))
+        dm = float(row['(m-M)o'].split()[0])
+        scs.append(SkyCoord(row['RA'], row['Dec'], unit=(u.hour, u.deg),
+                            distance=Distance(distmod=dm)))
     mcconn_tab['Coords'] = SkyCoord(scs)
 
     for col in str_tab.colnames[3:]:
