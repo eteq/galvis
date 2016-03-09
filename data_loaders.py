@@ -6,7 +6,7 @@ import numpy as np
 from scipy import optimize
 
 from astropy import units as u
-from astropy.table import QTable
+from astropy.table import QTable, Table
 from astropy.io import fits
 from astropy.wcs import WCS
 from astropy.coordinates import SkyCoord, SphericalRepresentation, CartesianRepresentation, UnitSphericalRepresentation, ICRS, Angle
@@ -211,3 +211,63 @@ def load_galfa_sensitivity(fn, rngscs=None, cendist=None):
     qdata = data * u.Msun * u.Mpc**-2
 
     return qdata, scs, wcs, hdu
+
+def load_mccon12_table(mcconn_url='https://www.astrosci.ca/users/alan/Nearby_Dwarfs_Database_files/NearbyGalaxies.dat', qtable=True):
+    from astropy.utils import data
+    from astropy.io import ascii
+
+    # have to do SSL stuff because astrosci.ca has expired SSL
+    import ssl
+    from urllib.error import URLError
+
+    baseline_create = ssl._create_default_https_context
+    try:
+        mcconn_tab_str = data.get_file_contents(mcconn_url, cache=True)
+    except URLError as e:
+        ee[0] = e
+        if 'SSL: CERTIFICATE_VERIFY_FAILED' in str(e.args):
+            ssl._create_default_https_context = ssl._create_unverified_context
+            exec(toexec)
+        else:
+            raise
+    finally:
+        ssl._create_default_https_context = baseline_create
+
+
+    headerrow = mcconn_tab_str.split('\n')[32]
+    colnames = headerrow.split()
+    colidxs = [headerrow.rindex(col) for col in colnames]
+
+    # this *removes* the references
+    col_starts = colidxs[:-1]
+    col_ends = [i-1 for i in colidxs[1:]]
+    colnames = colnames[:-1]
+
+    str_tab = ascii.read(mcconn_tab_str.split('\n')[34:], format='fixed_width_no_header',
+                         names=colnames, col_starts=col_starts, col_ends=col_ends)
+
+    mcconn_tab = (QTable if qtable else Table)()
+    mcconn_tab['Name'] = [s.strip() for s in str_tab['GalaxyName']]
+
+    scs = []
+    for row in str_tab:
+        scs.append(SkyCoord(row['RA'], row['Dec'], unit=(u.hour, u.deg)))
+    mcconn_tab['Coords'] = SkyCoord(scs)
+
+    for col in str_tab.colnames[3:]:
+        if col in ('EB-V', 'F', 'MHI'):
+            #single number
+            mcconn_tab[col] = [float(s) for s in str_tab[col]]
+        else:
+            # num + -
+            vals, ps, ms = [], [], []
+            for s in str_tab[col]:
+                val, p, m = s.split()
+                vals.append(float(val))
+                ps.append(float(p))
+                ms.append(float(m))
+            mcconn_tab[col] = vals
+            mcconn_tab[col + '+'] = ps
+            mcconn_tab[col + '-'] = ms
+
+    return mcconn_tab
