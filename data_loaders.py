@@ -34,10 +34,10 @@ def read_elvis_z0(fn):
     return tab
 
 
-def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False, inclhires=False):
+def load_elvii_z0(data_dir=os.path.abspath('elvis_data/PairedCatalogs/'), isolated=False, inclhires=False):
     tables = {}
 
-    fntoload = glob(os.path.join(data_dir, '*.txt'))
+    fntoload = [fn for fn in glob(os.path.join(data_dir, '*.txt')) if 'README' not in fn]
     for fn in fntoload:
         simname = os.path.split(fn)[-1][:-4]
         if simname.startswith('i'):
@@ -51,6 +51,49 @@ def load_elvii(data_dir=os.path.abspath('elvis_data/'), isolated=False, inclhire
         print('Loading', fn)
         tables[simname] = read_elvis_z0(fn)
     return tables
+
+def read_elvis_trees(dirfn, cols):
+    if isinstance(cols, str):
+        cols = cols.split(',')
+
+    coldct = {}
+    for col in cols:
+        fn = os.path.join(dirfn, col) + '.txt'
+        with open(fn) as f:
+            firstline = f.readline().strip()
+            secondline = f.readline().strip()
+        dt = float if '.' in secondline else int
+        arr = np.loadtxt(fn, dtype=dt)
+
+        match = re.match(r'# .*?\((.*?)\)', firstline)
+        unit = u.Unit(match.group(1))  if match else None
+
+        coldct[col] = arr*(1 if unit is None else unit)
+
+    if 'scale' in coldct:
+        coldct['z'] = 1./coldct['scale'] - 1
+    return QTable(coldct)
+
+
+def load_elvii_trees(cols, data_dir=os.path.abspath('elvis_data/PairedTrees/'), isolated=False, inclhires=False):
+    tables = {}
+
+    fntoload = [fn for fn in glob(os.path.join(data_dir, '*')) if os.path.isdir(fn)]
+
+    for fn in fntoload:
+        simname = os.path.split(fn)[-1]
+        if simname.startswith('i'):
+            if not isolated:
+                continue
+        else:
+            if isolated:
+                continue
+        if not inclhires and 'HiRes' in fn:
+            continue
+        print('Loading', fn)
+        tables[simname] = read_elvis_trees(fn, cols)
+    return tables
+
 
 
 galactic_center = SkyCoord(0*u.deg, 0*u.deg, frame='galactic')
