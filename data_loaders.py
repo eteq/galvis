@@ -49,8 +49,17 @@ def load_elvii_z0(data_dir=os.path.abspath('elvis_data/PairedCatalogs/'), isolat
         if not inclhires and 'HiRes' in fn:
             continue
         print('Loading', fn)
-        tables[simname] = read_elvis_z0(fn)
+        tables[simname] = tab = read_elvis_z0(fn)
+        annotate_table_z0(tab)
     return tables
+
+
+def annotate_table_z0(tab):
+    id0, id1 = tab['ID'][:2]
+    tab['sat_of_0'] = tab['UpID'] == id0
+    tab['sat_of_1'] = tab['UpID'] == id1
+    tab['sat_of_either'] = tab['sat_of_0']|tab['sat_of_1']
+
 
 def read_elvis_trees(dirfn, cols):
     if isinstance(cols, str):
