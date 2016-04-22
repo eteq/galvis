@@ -6,3 +6,6 @@
 elvis_data
 onempc_mass*sens*fits*
 *.pro
+
+#this has its own separate repo
+paper
