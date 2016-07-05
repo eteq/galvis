@@ -103,6 +103,21 @@ def load_elvii_trees(cols, data_dir=os.path.abspath('elvis_data/PairedTrees/'), 
         tables[simname] = read_elvis_trees(fn, cols)
     return tables
 
+def annotate_z0_from_trees(tab0s, tree_tabs):
+    for nm in tab0s:
+        tab0 = tab0s[nm]
+        trees = tree_tabs[nm]
+
+        up0 = trees['ID'][0] == trees['upID']
+        up0[(trees['ID'][0]==0) | (trees['upID']==0)] = False
+        ever0 = np.any(up0, axis=1)
+        up1 = trees['ID'][1] == trees['upID']
+        up1[(trees['ID'][1]==0) | (trees['upID']==0)] = False
+        ever1 = np.any(up1, axis=1)
+
+        tab0['upIDever0'] = ever0
+        tab0['upIDever1'] = ever1
+        tab0['upIDever_either'] = ever0|ever1
 
 
 galactic_center = SkyCoord(0*u.deg, 0*u.deg, frame='galactic')

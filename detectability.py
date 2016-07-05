@@ -13,10 +13,21 @@ def bradford_15_mstar_to_mgas(mstar):
     return u.solMass*10**mgas
 
 
-def compute_elvis_mgas_bradford_15(elvii_pairs):
+def add_scatter_to_elvis_mstar(elvii_pairs, scatter_amplitude=.3,
+                               mstarcolnm='Mstar_preferred',
+                               outcolnm='Mstar_scattered'):
+    for nm, tab in elvii_pairs.items():
+        lmstar = np.log10(tab[mstarcolnm]/u.solMass)
+        lmstar_scat = lmstar + np.random.randn(len(tab))*scatter_amplitude
+        tab['Mstar_scattered'] = (10**lmstar_scat)*u.solMass
+
+
+def compute_elvis_mgas_bradford_15(elvii_pairs,
+                                   mstarcolnm='Mstar_preferred',
+                                   outcolnm='MHI'):
     for tab in elvii_pairs.values():
-        Ms = tab['Mstar_preferred']
-        tab['MHI'] = bradford_15_mstar_to_mgas(Ms)
+        Ms = tab[mstarcolnm]
+        tab[outcolnm] = bradford_15_mstar_to_mgas(Ms)
 
 
 def compute_detectability(sens_arr, sens_wcs, scs, MHIs):
@@ -104,7 +115,7 @@ def compute_elvis_hvc_ds(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbose
                       np.sum(dHVCs > 25)/len(dHVCs), 'of', len(scs))
 
 
-def compute_elvis_findable(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbose=False):
+def compute_elvis_findable(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbose=False, vlsr_thresh=None):
     """
     Detectability must already be defined
     """
@@ -126,6 +137,9 @@ def compute_elvis_findable(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbo
             if nm.startswith('detectable'):
                 suffix = nm[10:]
                 det = tab[nm]
-                vdevOK = tab['host' + nm[-1] + '_vdevok']
+                if vlsr_thresh is None:
+                    vOK = tab['host' + nm[-1] + '_vdevok']
+                else:
+                    vOK = np.abs(tab['host' + nm[-1] + '_vrlsr']) < vlsr_thresh
                 dHVCok = tab['host' + nm[-1] + '_dHVCok']
-                tab['findable' + suffix] = det & vdevOK & dHVCok
+                tab['findable' + suffix] = det & vOK & dHVCok
