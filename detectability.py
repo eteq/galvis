@@ -119,18 +119,26 @@ def compute_elvis_findable(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbo
     """
     Detectability must already be defined
     """
-    recalc_vdev = recalc_dhvc = False
+    recalc_vdev = recalc_dhvc = recalc_vlsr = False
     for name, tab in elvii_pairs.items():
         for i in (0, 1):
             if 'host{}_vdevok'.format(i) not in tab.colnames:
                 recalc_vdev = True
             if 'host{}_dHVCok'.format(i) not in tab.colnames:
                 recalc_dhvc = True
+            if vlsr_thresh is not None and 'host{}_vlsrok'.format(i) not in tab.colnames:
+                recalc_vlsr = True
 
     if recalc_vdev:
         compute_elvis_vlsr_minmax(elvii_pairs, verbose)
     if recalc_dhvc:
         compute_elvis_hvc_ds(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold, verbose)
+    if recalc_vlsr:
+        for name, tab in elvii_pairs.items():
+            for i in (0, 1):
+                vlsr = tab['host{}_vrlsr'.format(i)]
+                tab['host{}_vlsr{}ok'.format(i, vlsr_thresh.to(u.km/u.s).value)] = np.abs(vlsr) < vlsr_thresh
+
 
     for name, tab in elvii_pairs.items():
         for nm in tab.colnames:
@@ -140,6 +148,7 @@ def compute_elvis_findable(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbo
                 if vlsr_thresh is None:
                     vOK = tab['host' + nm[-1] + '_vdevok']
                 else:
-                    vOK = np.abs(tab['host' + nm[-1] + '_vrlsr']) < vlsr_thresh
+                    vOK = tab['host{}_vlsr{}ok'.format(nm[-1], vlsr_thresh.to(u.km/u.s).value)]
+
                 dHVCok = tab['host' + nm[-1] + '_dHVCok']
                 tab['findable' + suffix] = det & vOK & dHVCok
