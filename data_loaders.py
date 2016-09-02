@@ -103,21 +103,37 @@ def load_elvii_trees(cols, data_dir=os.path.abspath('elvis_data/PairedTrees/'), 
         tables[simname] = read_elvis_trees(fn, cols)
     return tables
 
-def annotate_z0_from_trees(tab0s, tree_tabs):
+def annotate_z0_from_trees(tab0s, tree_tabs, zthresh=None):
+    """
+    Updates the ``tab0s`` catalogs based on info from walking the ``tree_tabs``.
+    `zthresh` sets what "z since" to use, or None for "ever"
+
+    Updates the catalogs to include columns for:
+    * upID<x>0
+    * upID<x>1
+    * upID<x>_either
+    where <x> is 'ever' or z<n>
+     """
     for nm in tab0s:
         tab0 = tab0s[nm]
         trees = tree_tabs[nm]
 
-        up0 = trees['ID'][0] == trees['upID']
+        up0 = (trees['ID'][0] == trees['upID'])
         up0[(trees['ID'][0]==0) | (trees['upID']==0)] = False
-        ever0 = np.any(up0, axis=1)
         up1 = trees['ID'][1] == trees['upID']
         up1[(trees['ID'][1]==0) | (trees['upID']==0)] = False
+
+        if zthresh is not None:
+            up0[trees['z'] > zthresh] = False
+            up1[trees['z'] > zthresh] = False
+
+        ever0 = np.any(up0, axis=1)
         ever1 = np.any(up1, axis=1)
 
-        tab0['upIDever0'] = ever0
-        tab0['upIDever1'] = ever1
-        tab0['upIDever_either'] = ever0|ever1
+        basename = 'upID' + ('ever' if zthresh is None else 'z{:.2g}'.format(zthresh).replace('.', 'p'))
+        tab0[basename + '0'] = ever0
+        tab0[basename + '1'] = ever1
+        tab0[basename + '_either'] = ever0 | ever1
 
 
 galactic_center = SkyCoord(0*u.deg, 0*u.deg, frame='galactic')
