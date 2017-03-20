@@ -152,3 +152,13 @@ def compute_elvis_findable(elvii_pairs, hvc_scs, hvc_vlsr, D_threshold=25, verbo
 
                 dHVCok = tab['host' + nm[-1] + '_dHVCok']
                 tab['findable' + suffix] = det & vOK & dHVCok
+
+
+def real_lg_in_galfa_dr2(lgtab, hicut=True):
+    """
+    `lgtab` is from the mcconachie catalog
+    """
+    ingalfa = lgtab[(lgtab['decdeg']>0)&(lgtab['decdeg']<40)&(lgtab['vh']<600)]
+    if hicut:
+        ingalfa = ingalfa[(ingalfa['MHI']>0)&(ingalfa['MHI']<99)]
+    return ingalfa
