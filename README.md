@@ -1,4 +1,4 @@
-# galvis
+# Galvis
 
 Code and notebooks for Tollerud & Peek 2017.
 
