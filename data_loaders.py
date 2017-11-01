@@ -13,7 +13,7 @@ from astropy.coordinates import (SkyCoord, ICRS, SphericalRepresentation,
                                  CartesianRepresentation,
                                  UnitSphericalRepresentation, Distance, Angle)
 
-from astropy.coordinates.angles import rotation_matrix
+from astropy.coordinates.matrix_utilities import rotation_matrix
 
 ### ELVIS simulation loaders
 
